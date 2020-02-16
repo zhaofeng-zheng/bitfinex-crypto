@@ -5,6 +5,7 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from multiprocessing.pool import Pool
+from multiprocessing import Queue, Process, Lock, Manager
 from Signal import Signal
 from func.backtest_params import cal_common_backtest_params
 from func.calculate_max_drawdown import cal_max_drawdown
@@ -158,7 +159,7 @@ class Optimizer(bitfinex):
 
         return df
 
-    def _time_interval_based_multiprocessing(self, r: int, params_lst: list, now: datetime = datetime.now()):
+    def _time_interval_based_multiprocessing(self, r: int, params_lst: list, lock: Lock,now: datetime = datetime.now()):
         '''
         :param r:
         :return: Void
@@ -261,11 +262,28 @@ class Optimizer(bitfinex):
             rtn.loc[str(params), 'max_drawdown'] = max_drawdown
             rtn.loc[str(params), 'start_date'] = start_date
             rtn.loc[str(params), 'end_date'] = end_date
-            df[['candle_begin_time', 'equity_curve']].to_hdf(f'./data/all params equity curve/all_equity_curve.h5', key=f'{self.trade_coin}_{rule_type}_{str(params)}_equity_curve', mode='a')
+            lock.acquire()
+            df[['candle_begin_time', 'equity_curve']].to_hdf('./data/all params equity curve/all_params_equity_curve.h5', key=f'{self.trade_coin}_{rule_type}_{str(params)}_equity_curve', mode='a')
+            lock.release()
+            # self.df_queue.put((df[['candle_begin_time', 'equity_curve']], f'{self.trade_coin}_{rule_type}_{str(params)}_equity_curve'))
         if os.path.exists(r'./data/backtest results/parameter_result_' + rule_type + '.csv'):
             rtn.to_csv(r'./data/backtest results/parameter_result_' + rule_type + '.csv', header=False, mode='a')
         else:
             rtn.to_csv(r'./data/backtest results/parameter_result_' + rule_type + '.csv', header=True, mode='a')
+
+    # def flush_df_queue(self):
+    #     """
+    #     实现队列写入equity curve的h5文件，也可以用锁
+    #     :arg
+    #     """
+    #     while True:
+    #         while not self.df_queue.empty():
+    #             df, key = self.df_queue.get()
+    #             df.to_hdf('./data/all params equity curve/all_params_equity_curve.h5', key=key, mode='a')
+    #             print('df flushed')
+    #         else:
+    #             print('df_queue是空的\n')
+    #             time.sleep(0.1)
 
     def screen_for_best_parameter(self):
         '''
@@ -275,9 +293,13 @@ class Optimizer(bitfinex):
         now = datetime.now()
         r_lst = [5, 15, 30, 60]
         all_params = [[(n, m * 0.1, pingcang_multiplier * 0.1)
-                       for n in range(step, step + 500, 10)
-                       for m in range(15, 31, 1)
-                       for pingcang_multiplier in range(5, 16, 1) if m > pingcang_multiplier] for step in range(500, 2501, 500)]
+                       for n in range(step, step + 25, 5)
+                       for m in range(15, 16, 1)
+                       for pingcang_multiplier in range(5, 7, 1) if m > pingcang_multiplier] for step in range(500, 576, 25)]
+        # Process(target=self.flush_df_queue).start()
+        manager = Manager()
+        lock = manager.Lock()
+        pool = Pool(processes=os.cpu_count() - 1)
         for r in r_lst:
             if r == 60:
                 rule_type = "1H"
@@ -286,11 +308,10 @@ class Optimizer(bitfinex):
             if os.path.exists(r'./data/backtest results/parameter_result_' + rule_type + '.csv'):
                 shutil.move(r'./data/backtest results/parameter_result_' + rule_type + '.csv',
                             r'./data/temp/parameter_result_' + rule_type + '.csv')
-            pool = Pool(processes=os.cpu_count()-1)
             for params_lst in all_params:
-                pool.apply_async(func=self._time_interval_based_multiprocessing, args=(r, params_lst), kwds={'now': now}, error_callback=self.error_callback)
-            pool.close()
-            pool.join()
+                pool.apply_async(func=self._time_interval_based_multiprocessing, args=(r, params_lst, lock), kwds={'now': now}, error_callback=self.error_callback)
+        pool.close()
+        pool.join()
 
     @staticmethod
     def convert_date_period(df, rule_type, base=0):

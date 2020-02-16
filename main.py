@@ -1,3 +1,5 @@
+from multiprocessing import Queue, Process, Lock, Manager
+
 from Exchange import MyExchange
 from optimizer.optimizer import Optimizer
 
