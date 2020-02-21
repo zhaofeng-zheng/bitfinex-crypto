@@ -17,14 +17,13 @@ pd.set_option('expand_frame_repr', False)
 
 
 class MyExchange(bitfinex):
-    def __init__(self, symbol, timeInterval, recentPerformanceTimeDuration, params=(2030, 2, 9), leverage_rate=3.3,
+    def __init__(self, symbol, timeInterval, params=(2030, 2, 9), leverage_rate=3.3,
                  apiKey='6LjLCpcybWA5If7MKSOmVEwRfXmXYqeJKg1yvaAJf88',
                  secret='GCHXtdepaJStLWI7AsCrIXNvVSywCIfZlAGQEheimPW'):
         super().__init__()
         self.apiKey = apiKey
         self.secret = secret
         self.symbol = symbol
-        self.recentPerformanceTimeDuration = recentPerformanceTimeDuration
         self.leverage_rate = leverage_rate
         self.timeInterval = timeInterval
         self.base_coin = symbol.split('/')[-1]
@@ -60,38 +59,33 @@ class MyExchange(bitfinex):
 
     def fetch_my_balance(self):
         while True:
+            # 抓取普通交易账户余额
+            exchange_balance = self.fetch_balance({'type': 'exchange'})['total']
             try:
-                # 抓取普通交易账户余额
-                exchange_balance = self.fetch_balance({'type': 'exchange'})['total']
-                try:
-                    trade_coin_balance = exchange_balance[self.trade_coin]
-                except KeyError:
-                    trade_coin_balance = 0
-                try:
-                    base_coin_balance = exchange_balance[self.base_coin]
-                except KeyError:
-                    base_coin_balance = 0
-                print(self.base_coin, '在bitfinex普通交易账户余额为:', base_coin_balance)
-                print(self.trade_coin, '在bitfinex普通交易账户余额为:', trade_coin_balance)
+                trade_coin_balance = exchange_balance[self.trade_coin]
+            except KeyError:
+                trade_coin_balance = 0
+            try:
+                base_coin_balance = exchange_balance[self.base_coin]
+            except KeyError:
+                base_coin_balance = 0
+            print(self.base_coin, '在bitfinex普通交易账户余额为:', base_coin_balance)
+            print(self.trade_coin, '在bitfinex普通交易账户余额为:', trade_coin_balance)
 
-                # 抓取保证金交易账户余额
-                margin_balance = self.fetch_balance({'type': 'trading'})['total']
-                try:
-                    trade_coin_margin_balance = margin_balance[self.trade_coin]
-                except KeyError:
-                    trade_coin_margin_balance = 0
-                try:
-                    base_coin_margin_balance = margin_balance[self.base_coin]
-                except KeyError:
-                    base_coin_margin_balance = 0
-                print(self.base_coin, '在bitfinex保证金交易账户余额为:', base_coin_margin_balance)
-                print(self.trade_coin, '在bitfinex保证金交易账户余额为:', trade_coin_margin_balance)
-                return trade_coin_balance, base_coin_balance, trade_coin_margin_balance, base_coin_margin_balance
+            # 抓取保证金交易账户余额
+            margin_balance = self.fetch_balance({'type': 'trading'})['total']
+            try:
+                trade_coin_margin_balance = margin_balance[self.trade_coin]
+            except KeyError:
+                trade_coin_margin_balance = 0
+            try:
+                base_coin_margin_balance = margin_balance[self.base_coin]
+            except KeyError:
+                base_coin_margin_balance = 0
+            print(self.base_coin, '在bitfinex保证金交易账户余额为:', base_coin_margin_balance)
+            print(self.trade_coin, '在bitfinex保证金交易账户余额为:', trade_coin_margin_balance)
+            return trade_coin_balance, base_coin_balance, trade_coin_margin_balance, base_coin_margin_balance
 
-            except Exception as error:
-                print('获取余额出错:', error, '\n')
-                print('重试...\n')
-                sleep(1)
 
     def parsed_bitfinex_recent_candles(self):
         while True:
@@ -315,3 +309,6 @@ class MyExchange(bitfinex):
                 with open(configDoc, mode='w') as f:
                     f.write(str(self.fetch_ticker(self.symbol)['last']))
             print('\n=====本次循环结束======\n')
+
+    def nonce(self):
+        return f'{time.time()*1e99:0.0f}'
